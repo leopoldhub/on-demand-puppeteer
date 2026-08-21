@@ -2,6 +2,8 @@
   "name": "on-demand-puppeteer",
   "version": "1.0.0",
   "description": "On-demand, profile-isolated Puppeteer CDP provider",
+  "repository": "https://github.com/leopoldhub/on-demand-puppeteer",
+  "bugs": "https://github.com/leopoldhub/on-demand-puppeteer/issues",
   "license": "MIT",
   "main": "dist/index.js",
   "type": "module",

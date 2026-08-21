@@ -58,7 +58,7 @@ flowchart TB
 ### Docker Compose
 
 ```sh
-AUTH_TOKEN=replace-with-a-strong-token docker compose up -d --build
+AUTH_TOKEN=replace-with-a-strong-token docker compose up -d --pull always
 ```
 
 The service is available at `http://127.0.0.1:9222`. Browser profiles are stored in the `browser-profiles` named volume.

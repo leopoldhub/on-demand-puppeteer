@@ -1,8 +1,6 @@
 services:
   on-demand-puppeteer:
-    build:
-      context: .
-    image: ghcr.io/${GITHUB_REPOSITORY:-local/on-demand-puppeteer}:${IMAGE_TAG:-latest}
+    image: ghcr.io/leopoldhub/on-demand-puppeteer:latest
     restart: unless-stopped
     init: true
     cap_add:
