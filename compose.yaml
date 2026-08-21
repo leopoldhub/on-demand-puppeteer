@@ -1,0 +1,30 @@
+services:
+  on-demand-puppeteer:
+    build:
+      context: .
+    image: ghcr.io/${GITHUB_REPOSITORY:-local/on-demand-puppeteer}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    init: true
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      HOST: 0.0.0.0
+      PORT: 9222
+      PROFILE_ROOT: /app/.browser-profiles
+      HEADLESS: "true"
+      LOG_FORMAT: json
+      AUTH_TOKEN: ${AUTH_TOKEN:-}
+      DEFAULT_IDLE_TIMEOUT_MS: ${DEFAULT_IDLE_TIMEOUT_MS:-300000}
+    ports:
+      - "127.0.0.1:${PORT:-9222}:9222"
+    volumes:
+      - browser-profiles:/app/.browser-profiles
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9222/healthz').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  browser-profiles:

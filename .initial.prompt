@@ -1,0 +1,63 @@
+This is a blank typescript project template.
+Your goal is to implement the project from spec, according to user will.
+You are to document the project properly.
+You are to keep updated README and AGENTS md.
+Here is documentation structure and purpose:
+- README.md:
+target: humans
+purpose: know what the project is, how to run it, its configurations, and other global important information.
+constraints:
+must be concise
+must be clear
+- AGENTS.md
+target: ai agents like you
+purpose: give blank ai contexts all the tools and information needed to properly contribute to the project.
+It should contain global constraints, basic structure, documentation location...
+constraints:
+must be concise
+must be clear
+must contains everithing that is needed to understand the global project structure and where to find information.
+- docs/*
+target: humans and ai agents
+purpose:
+describe the current state of the project.
+It must be organised in clear, single purpose md files, organized in folders.
+each doc should contain a concise start section that can be expanded in more details in other sections.
+constraints:
+must be clear
+must be concise
+information must be easy to find
+more detailed information can optionally be found in more detailed sections if relevant
+- spec/*
+target: humans and ai agents
+purpose:
+describe the target/wanted state of the project.
+it does NOT describe the current state, but the project's target goals, constraints, limitations, and important design decisions.
+specs should be separated into multiple single purpose md files organised in folders and regrouped in coherent ways.
+constraints:
+should NOT describe the current project state
+should be clear and concise
+should not contain code (except example snippets and global structure)
+
+---
+
+this is a typescript project.
+sources are in src/
+env ariables are present in `.env`
+env example is `example.env`
+
+NEVER READ, OR PRINT THE `.env` CONTENT!
+NEVER PRINT IT IN THE CODE!
+IF IT EVER LEAKS, WARN THE USER IMMEDIATELY!
+
+Goal:
+This project should be an on demand puppeteer provider with separate persistence profile for each consumer.
+On CDP connexion in, look for `profile=xxx` get parameter.
+If no profile parameter is specified, use the default profile.
+If an instance is already up for the specified profile, proxy the CDP to it.
+If not instance is up for the profile, start one up and proxy the CDP to it.
+if `idleTimeout=xxx` parameter is passed, use it for idle timeout (ms), otherwise use a default env value (e.g. 5 minutes).
+if idleTimeout is -1, never idle time out.
+Idle timeout will stop the instance after a period of inactivity over CDP.
+
+Never read the `*.env` (except for `example.env`) or `.initial.prompt` files, and exclude them from all searches, read, write and grep applicable.

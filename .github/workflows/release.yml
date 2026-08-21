@@ -1,0 +1,238 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      image: ${{ steps.version.outputs.image }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Read and validate version
+        id: version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="v${version}"
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "package.json version must be a valid release version, got: $version" >&2
+            exit 1
+          fi
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+
+          if [[ "$GITHUB_REF_TYPE" == "branch" ]]; then
+            version_changed=true
+            if [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]] && git cat-file -e "$BEFORE_SHA:package.json" 2>/dev/null; then
+              previous_version="$(git show "$BEFORE_SHA:package.json" | node -e "let input = ''; process.stdin.on('data', chunk => input += chunk); process.stdin.on('end', () => process.stdout.write(JSON.parse(input).version))")"
+              if [[ "$previous_version" == "$version" ]]; then
+                version_changed=false
+              fi
+            fi
+
+            if git rev-parse "$tag" >/dev/null 2>&1; then
+              tagged_commit="$(git rev-list -n 1 "$tag")"
+              if [[ "$tagged_commit" == "$GITHUB_SHA" ]]; then
+                should_release=true
+              elif [[ "$version_changed" == "false" ]]; then
+                should_release=false
+              else
+                echo "$tag already exists on a different commit" >&2
+                exit 1
+              fi
+            else
+              should_release="$version_changed"
+            fi
+          elif git rev-parse "$tag" >/dev/null 2>&1; then
+            tagged_commit="$(git rev-list -n 1 "$tag")"
+            if [[ "$tagged_commit" == "$GITHUB_SHA" ]]; then
+              should_release=true
+            else
+              echo "$tag already exists on a different commit" >&2
+              exit 1
+            fi
+          else
+            should_release=false
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "should_release=$should_release" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.version.outputs.should_release == 'true'
+        run: npm ci
+
+      - name: Typecheck
+        if: steps.version.outputs.should_release == 'true'
+        run: npm run typecheck
+
+      - name: Test
+        if: steps.version.outputs.should_release == 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.version.outputs.should_release == 'true'
+        run: npm run build
+
+      - name: Create release archive
+        if: steps.version.outputs.should_release == 'true'
+        shell: bash
+        run: tar -czf "on-demand-puppeteer-${{ steps.version.outputs.version }}.tar.gz" dist package.json package-lock.json README.md example.env
+
+      - name: Upload release archive
+        if: steps.version.outputs.should_release == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-archive
+          path: on-demand-puppeteer-${{ steps.version.outputs.version }}.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  tag:
+    name: Create version tag
+    needs: prepare
+    if: needs.prepare.outputs.should_release == 'true' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and push tag
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "$TAG"
+
+  release:
+    name: Publish GitHub release
+    needs:
+      - prepare
+      - tag
+    if: >-
+      always() &&
+      needs.prepare.outputs.should_release == 'true' &&
+      (needs.tag.result == 'success' || needs.tag.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release archive
+        uses: actions/download-artifact@v4
+        with:
+          name: release-archive
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          archive="on-demand-puppeteer-${VERSION}.tar.gz"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --latest --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$archive" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --generate-notes \
+              --latest \
+              --verify-tag
+          fi
+
+      - name: Update latest Git tag
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        shell: bash
+        run: |
+          git tag --force latest "$TAG"
+          git push origin refs/tags/latest --force
+
+  image:
+    name: Publish container image
+    needs:
+      - prepare
+      - release
+    if: needs.prepare.outputs.should_release == 'true' && needs.release.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish version image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.tag }}
+            ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.version }}
+            ${{ needs.prepare.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

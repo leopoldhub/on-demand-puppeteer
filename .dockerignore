@@ -1,0 +1,15 @@
+.git
+.github
+.browser-profile
+.browser-data
+.browser-profiles
+.raw
+coverage
+dist
+docs
+node_modules
+spec
+tests
+*.env
+!example.env
+npm-debug.log*
